@@ -9,7 +9,6 @@ require_relative 'routes'
 class Game < OpenStruct
   def to_json(*args)
     json_obj = self.as_json['t']
-    puts json_obj[:base_games]&.map!(&:id)
     json_obj.to_json(*args)
   end
 

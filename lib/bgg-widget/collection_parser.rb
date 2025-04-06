@@ -11,19 +11,6 @@ class Collection < OpenStruct
     self.as_json['t'].to_json(*args)
   end
 
-  def find_proxies
-    games = self.games
-    return [] unless games
-
-
-    games.reject(&:proxy?)
-         .map(&:base_games)
-         .reject(&:nil?)
-         .flatten
-         .filter(&:is_proxy?)
-         .zip(games.filter(&:proxy?))
-  end
-
   def resolve_proxies
     games = self.games
     return self unless games
@@ -33,6 +20,19 @@ class Collection < OpenStruct
       game.base_games&.map! { |base_game| map[base_game.id]&.first || base_game }
     end
 
+    self
+  end
+
+  def reverse_dependencies
+    self.games&.each do |game|
+      if game.base_games
+        game.base_games.each do |base_game|
+          base_game.extensions ||= []
+          base_game.extensions << game
+        end
+        game.delete_field :base_games
+      end
+    end
     self
   end
 end

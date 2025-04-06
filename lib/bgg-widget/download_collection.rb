@@ -10,7 +10,7 @@ require_relative 'routes'
 user = ARGV[0]
 
 unless user
-  puts "Error: no user given\nUsage: ruby build-list.rb <user>"
+  puts "Error: no user given\nUsage: ruby download_collection.rb <user>"
   exit 1
 end
 
@@ -21,7 +21,7 @@ retry_on202 = ->(response) do
   if response.code.to_i == 202
     puts "Got 202 for #{response.uri.to_s.inspect}. Retrying..."
     sleep 10
-    downloader.enq(response.uri)
+    downloader.enq(response.uri).then(&retry_on202)
   else
     Concurrent::Promises.fulfilled_future(response)
   end
@@ -41,9 +41,10 @@ parse_collection = ->(response) do
 end
 
 fetch_games_chunk = ->(games) do
-  puts "Fetching chunk of games #{games}..."
+  ids = games.map(&:id)
+  puts "Fetching chunk of games #{ids}..."
   downloader
-    .enq(Routes.things(*games.map(&:id)))
+    .enq(Routes.things(*ids))
     .then(&reject_errors)
     .then { |response| [response.body] }
 end
@@ -56,7 +57,7 @@ parse_games = ->(games) do
 end
 
 fetch_games = ->(collection) do
-  puts "Fetching games #{collection.games}..."
+  puts "Fetching games #{collection.games.map(&:id)}..."
   Concurrent::Promises.zip(*collection.games.each_slice(20).map(&fetch_games_chunk))
                       .then do |games_raw|
                           collection.games = games_raw.flat_map(&parse_games)
@@ -64,9 +65,11 @@ fetch_games = ->(collection) do
                       end
 end
 
-printer = ->(data) { puts data.inspect }
-
-save = ->(data) { File.write("#{user}.json", data) }
+save = ->(data) do
+  file = "#{user}.json"
+  puts "Saving to #{file}..."
+  File.write("#{user}.json", data)
+end
 
 downloader
   .enq(Routes::collection_of(user))
@@ -74,10 +77,10 @@ downloader
   .then(&reject_errors)
   .then(&parse_collection)
   .then(&fetch_games).flat
-  .then {|collection| collection.resolve_proxies.to_json }
+  .then {|collection| collection.resolve_proxies.reverse_dependencies.to_json }
   .then(&save)
+  .then { puts 'done' }
   .wait!
-#downloader.enq('/xmlapi2/thing?id=28143').then(&reject_errors).then &printer
 
 downloader.stop
 
